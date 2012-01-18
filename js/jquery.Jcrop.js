@@ -1,12 +1,9 @@
 /**
- * jquery.Jcrop.js v0.9.9 {{{
- *
+ * jquery.Jcrop.js v0.9.9
  * jQuery Image Cropping Plugin - released under MIT License 
  * Author: Kelly Hallman <khallman@gmail.com>
  * http://github.com/tapmodo/Jcrop
- *
- * }}}
- * Copyright (c) 2008-2011 Tapmodo Interactive LLC {{{
+ * Copyright (c) 2008-2012 Tapmodo Interactive LLC {{{
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -171,6 +168,11 @@
         if ((ord === 'move') && !options.allowMove) {
           return false;
         }
+        
+        // Fix position of crop area when dragged the very first time.
+        // Necessary when crop image is in a hidden element when page is loaded.
+        docOffset = getPos($img);
+
         btndown = true;
         startDragMode(ord, mouseAbs(e));
         e.stopPropagation();
@@ -283,6 +285,7 @@
     // character in the DOM will be as you left it.
     var img_css = {
       border: 'none',
+      visibility: 'visible',
       margin: 0,
       padding: 0,
       position: 'absolute',
@@ -290,12 +293,35 @@
       left: 0
     };
 
-    var $origimg = $(obj);
-    var $img = $origimg.clone().removeAttr('id').css(img_css);
+    var $origimg = $(obj),
+      img_mode = true;
 
-    $img.width($origimg.width());
-    $img.height($origimg.height());
-    $origimg.after($img).hide();
+    if (obj.tagName == 'IMG') {
+      // Fix size of crop image.
+      // Necessary when crop image is within a hidden element when page is loaded.
+      if ($origimg[0].width != 0 && $origimg[0].height != 0) {
+        // Obtain dimensions from contained img element.
+        $origimg.width($origimg[0].width);
+        $origimg.height($origimg[0].height);
+      } else {
+        // Obtain dimensions from temporary image in case the original is not loaded yet (e.g. IE 7.0). 
+        var tempImage = new Image();
+        tempImage.src = $origimg[0].src;
+        $origimg.width(tempImage.width);
+        $origimg.height(tempImage.height);
+      } 
+
+      var $img = $origimg.clone().removeAttr('id').css(img_css).show();
+
+      $img.width($origimg.width());
+      $img.height($origimg.height());
+      $origimg.after($img).hide();
+
+    } else {
+      $img = $origimg.css(img_css).show();
+      img_mode = false;
+      if (options.shade === null) { options.shade = true; }
+    }
 
     presize($img, options.boxWidth, options.boxHeight);
 
@@ -312,8 +338,7 @@
       $div.addClass(options.addClass);
     }
 
-    var $img2 = $('<img />')
-        .attr('src', $img.attr('src')).css(img_css).width(boundx).height(boundy),
+    var $img2 = $('<div />'),
 
         $img_holder = $('<div />') 
         .width('100%').height('100%').css({
@@ -334,8 +359,14 @@
           options.onDblClick.call(api,c);
         }).insertBefore($img).append($img_holder, $hdl_holder); 
 
-    $img_holder.append($img2);
-    //Shade.refresh();
+    if (img_mode) {
+
+      $img2 = $('<img />')
+          .attr('src', $img.attr('src')).css(img_css).width(boundx).height(boundy),
+
+      $img_holder.append($img2);
+
+    }
 
     if (ie6mode) {
       $sel.css({
@@ -508,7 +539,7 @@
             rwa = Math.abs(rw),
             rha = Math.abs(rh),
             real_ratio = rwa / rha,
-            xx, yy;
+            xx, yy, w, h;
 
         if (max_x === 0) {
           max_x = boundx * 10;
@@ -829,11 +860,12 @@
     // }}}
     // Selection Module {{{
     var Selection = (function () {
-      var awake, hdep = 370;
-      var borders = {};
-      var handle = {};
-      var seehandles = false;
-      var hhs = options.handleOffset;
+      var awake,
+          hdep = 370,
+          borders = {},
+          handle = {},
+          dragbar = {},
+          seehandles = false;
 
       // Private Methods
       function insertBorder(type) //{{{
@@ -852,10 +884,10 @@
           cursor: ord + '-resize',
           position: 'absolute',
           zIndex: zi
-        });
+        }).addClass('ord-'+ord);
 
         if (Touch.support) {
-          jq.bind('touchstart', Touch.createDragger(ord));
+          jq.bind('touchstart.jcrop', Touch.createDragger(ord));
         }
 
         $hdl_holder.append(jq);
@@ -866,35 +898,35 @@
       {
         var hs = options.handleSize;
         return dragDiv(ord, hdep++).css({
-          top: px(-hhs + 1),
-          left: px(-hhs + 1),
           opacity: options.handleOpacity
         }).width(hs).height(hs).addClass(cssClass('handle'));
       }
       //}}}
       function insertDragbar(ord) //{{{
       {
-        var s = options.handleSize,
-            h = s,
-            w = s,
-            t = hhs,
-            l = hhs;
-
-        switch (ord) {
-        case 'n':
-        case 's':
-          w = '100%';
-          break;
-        case 'e':
-        case 'w':
-          h = '100%';
-          break;
+        return dragDiv(ord, hdep++).addClass('jcrop-dragbar');
+      }
+      //}}}
+      function createDragbars(li) //{{{
+      {
+        var i;
+        for (i = 0; i < li.length; i++) {
+          dragbar[li[i]] = insertDragbar(li[i]);
         }
-
-        return dragDiv(ord, hdep++).width(w).height(h).css({
-          top: px(-t + 1),
-          left: px(-l + 1)
-        });
+      }
+      //}}}
+      function createBorders(li) //{{{
+      {
+        var cl,i;
+        for (i = 0; i < li.length; i++) {
+          switch(li[i]){
+            case'n': cl='hline'; break;
+            case's': cl='hline bottom'; break;
+            case'e': cl='vline right'; break;
+            case'w': cl='vline'; break;
+          }
+          borders[li[i]] = insertBorder(cl);
+        }
       }
       //}}}
       function createHandles(li) //{{{
@@ -902,54 +934,6 @@
         var i;
         for (i = 0; i < li.length; i++) {
           handle[li[i]] = insertHandle(li[i]);
-        }
-      }
-      //}}}
-      function moveHandles(c) //{{{
-      {
-        var midvert = Math.round((c.h / 2) - hhs),
-            midhoriz = Math.round((c.w / 2) - hhs),
-            north = -hhs + 1,
-            west = -hhs + 1,
-            east = c.w - hhs,
-            south = c.h - hhs,
-            x, y;
-
-        if (handle.e) {
-          handle.e.css({
-            top: px(midvert),
-            left: px(east)
-          });
-          handle.w.css({
-            top: px(midvert)
-          });
-          handle.s.css({
-            top: px(south),
-            left: px(midhoriz)
-          });
-          handle.n.css({
-            left: px(midhoriz)
-          });
-        }
-        if (handle.ne) {
-          handle.ne.css({
-            left: px(east)
-          });
-          handle.se.css({
-            top: px(south),
-            left: px(east)
-          });
-          handle.sw.css({
-            top: px(south)
-          });
-        }
-        if (handle.b) {
-          handle.b.css({
-            top: px(south)
-          });
-          handle.r.css({
-            left: px(east)
-          });
         }
       }
       //}}}
@@ -984,14 +968,14 @@
       //}}}
 
       // Internal Methods
-      function updateVisible() //{{{
+      function updateVisible(select) //{{{
       {
         if (awake) {
-          return update();
+          return update(select);
         }
       }
       //}}}
-      function update() //{{{
+      function update(select) //{{{
       {
         var c = Coords.getFixed();
 
@@ -999,17 +983,16 @@
         moveto(c.x, c.y);
         if (options.shade) Shade.updateRaw(c);
 
-        if (seehandles) {
-          moveHandles(c);
-        }
-        if (!awake) {
-          show();
-        }
+        awake || show();
 
-        options.onChange.call(api, unscale(c));
+        if (select) {
+          options.onSelect.call(api, unscale(c));
+        } else {
+          options.onChange.call(api, unscale(c));
+        }
       }
       //}}}
-      function setBgOpacity(opacity,force,now)
+      function setBgOpacity(opacity,force,now) //{{{
       {
         if (!awake && !force) return;
         if (options.bgFade && !now) {
@@ -1023,6 +1006,7 @@
           $img.css('opacity', opacity);
         }
       }
+      //}}}
       function show() //{{{
       {
         $sel.show();
@@ -1048,7 +1032,6 @@
       function showHandles() //{{{
       {
         if (seehandles) {
-          moveHandles(Coords.getFixed());
           $hdl_holder.show();
         }
       }
@@ -1057,7 +1040,6 @@
       {
         seehandles = true;
         if (options.allowResize) {
-          moveHandles(Coords.getFixed());
           $hdl_holder.show();
           return true;
         }
@@ -1084,34 +1066,24 @@
         refresh();
       } 
       //}}}
-      /* Insert draggable elements {{{*/
-
+      // Insert draggable elements {{{
       // Insert border divs for outline
-      if (options.drawBorders) {
-        borders = {
-          top: insertBorder('hline'),
-          bottom: insertBorder('hline bottom'),
-          left: insertBorder('vline'),
-          right: insertBorder('vline right')
-        };
-      }
 
-      // Insert handles on edges
-      if (options.dragEdges) {
-        handle.t = insertDragbar('n');
-        handle.b = insertDragbar('s');
-        handle.r = insertDragbar('e');
-        handle.l = insertDragbar('w');
-      }
+      if (options.dragEdges && $.isArray(options.createDragbars))
+        createDragbars(options.createDragbars);
 
-      // Insert side and corner handles
-      if (options.sideHandles) {
-        createHandles(['n', 's', 'e', 'w']);
-      }
-      if (options.cornerHandles) {
-        createHandles(['sw', 'nw', 'ne', 'se']);
-      }
+      if ($.isArray(options.createHandles))
+        createHandles(options.createHandles);
+
+      if (options.drawBorders && $.isArray(options.createBorders))
+        createBorders(options.createBorders);
+
       //}}}
+
+      // This is a hack for iOS5 to support drag/move touch functionality
+      $(document).bind('touchstart.jcrop-ios',function(e) {
+        if ($(e.currentTarget).hasClass('jcrop-tracker')) e.stopPropagation();
+      });
 
       var $track = newTracker().mousedown(createDragger('move')).css({
         cursor: 'move',
@@ -1163,13 +1135,13 @@
         });
         if (Touch.support) {
           $(document)
-            .bind('touchmove', trackTouchMove)
-            .bind('touchend', trackTouchEnd);
+            .bind('touchmove.jcrop', trackTouchMove)
+            .bind('touchend.jcrop', trackTouchEnd);
         }
         if (trackDoc) {
           $(document)
-            .bind('mousemove',trackMove)
-            .bind('mouseup',trackUp);
+            .bind('mousemove.jcrop',trackMove)
+            .bind('mouseup.jcrop',trackUp);
         }
       } 
       //}}}
@@ -1178,16 +1150,7 @@
         $trk.css({
           zIndex: 290
         });
-        if (Touch.support) {
-          $(document)
-            .unbind('touchmove', trackTouchMove)
-            .unbind('touchend', trackTouchEnd);
-        }
-        if (trackDoc) {
-          $(document)
-            .unbind('mousemove', trackMove)
-            .unbind('mouseup', trackUp);
-        }
+        $(document).unbind('.jcrop');
       } 
       //}}}
       function trackMove(e) //{{{
@@ -1287,7 +1250,7 @@
       {
         if (options.allowMove) {
           Coords.moveOffset([x, y]);
-          Selection.updateVisible();
+          Selection.updateVisible(true);
         }
         e.preventDefault();
         e.stopPropagation();
@@ -1295,7 +1258,7 @@
       //}}}
       function parseKey(e) //{{{
       {
-        if (e.ctrlKey) {
+        if (e.ctrlKey || e.metaKey) {
           return true;
         }
         shift_down = e.shiftKey ? true : false;
@@ -1415,6 +1378,7 @@
     {
       setSelectRaw([parseInt(rect[0], 10) / xscale, parseInt(rect[1], 10) / yscale, parseInt(rect[2], 10) / xscale, parseInt(rect[3], 10) / yscale]);
       options.onSelect.call(api, unscale(Coords.getFixed()));
+      Selection.enableHandles();
     }
     //}}}
     function setSelectRaw(l) //{{{
@@ -1570,7 +1534,7 @@
     //}}}
     //}}}
 
-    if (Touch.support) $trk.bind('touchstart', Touch.newSelection);
+    if (Touch.support) $trk.bind('touchstart.jcrop', Touch.newSelection);
 
     $hdl_holder.hide();
     interfaceUpdate(true);
@@ -1608,66 +1572,70 @@
       }
     };
 
-    if ($.browser.msie) {
-      $div.bind('selectstart', function () {
-        return false;
-      });
-    }
+    if ($.browser.msie)
+      $div.bind('selectstart', function () { return false; });
 
     $origimg.data('Jcrop', api);
     return api;
   };
   $.fn.Jcrop = function (options, callback) //{{{
   {
-
-    function attachWhenDone(from) //{{{
-    {
-      var opt = (typeof(options) === 'object') ? options : {};
-      var loadsrc = opt.useImg || from.src;
-      var img = new Image();
-      img.onload = function () {
-        function attachJcrop() {
-          var api = $.Jcrop(from, opt);
-          if (typeof(callback) === 'function') {
-            callback.call(api);
-          }
-        }
-
-        function attachAttempt() {
-          if (!img.width || !img.height) {
-            window.setTimeout(attachAttempt, 50);
-          } else {
-            attachJcrop();
-          }
-        }
-        window.setTimeout(attachAttempt, 50);
-      };
-      img.src = loadsrc;
-    }
-    //}}}
-
+    var api;
     // Iterate over each object, attach Jcrop
     this.each(function () {
       // If we've already attached to this object
       if ($(this).data('Jcrop')) {
         // The API can be requested this way (undocumented)
-        if (options === 'api') {
-          return $(this).data('Jcrop');
-        }
+        if (options === 'api') return $(this).data('Jcrop');
         // Otherwise, we just reset the options...
-        else {
-          $(this).data('Jcrop').setOptions(options);
-        }
+        else $(this).data('Jcrop').setOptions(options);
       }
       // If we haven't been attached, preload and attach
       else {
-        attachWhenDone(this);
+        if (this.tagName == 'IMG')
+          $.Jcrop.Loader(this,function(){
+            $(this).css({display:'block',visibility:'hidden'});
+            api = $.Jcrop(this, options);
+            if ($.isFunction(callback)) callback.call(api);
+          });
+        else {
+          $(this).css({display:'block',visibility:'hidden'});
+          api = $.Jcrop(this, options);
+          if ($.isFunction(callback)) callback.call(api);
+        }
       }
     });
 
     // Return "this" so the object is chainable (jQuery-style)
     return this;
   };
+  //}}}
+  // $.Jcrop.Loader - basic image loader {{{
+
+  $.Jcrop.Loader = function(imgobj,success,error){
+    var $img = $(imgobj), img = $img[0];
+
+    function completeCheck(){
+      if (img.complete) {
+        $img.unbind('.jcloader');
+        if ($.isFunction(success)) success.call(img);
+      }
+      else window.setTimeout(completeCheck,50);
+    }
+
+    $img
+      .bind('load.jcloader',completeCheck)
+      .bind('error.jcloader',function(e){
+        $img.unbind('.jcloader');
+        if ($.isFunction(error)) error.call(img);
+      });
+
+    if (img.complete && $.isFunction(success)){
+      $img.unbind('.jcloader');
+      success.call(img);
+    }
+  };
+
   //}}}
   // Global Defaults {{{
   $.Jcrop.defaults = {
@@ -1688,18 +1656,18 @@
     borderOpacity: 0.4,
     handleOpacity: 0.5,
     handleSize: 7,
-    handleOffset: 5,
 
     aspectRatio: 0,
     keySupport: true,
-    cornerHandles: true,
-    sideHandles: true,
+    createHandles: ['n','s','e','w','nw','ne','se','sw'],
+    createDragbars: ['n','s','e','w'],
+    createBorders: ['n','s','e','w'],
     drawBorders: true,
     dragEdges: true,
     fixedSupport: true,
     touchSupport: null,
 
-    shade: false,
+    shade: null,
 
     boxWidth: 0,
     boxHeight: 0,
